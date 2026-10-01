@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LLM API Detector</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #171a21;
+    --field: #1e222b;
+    --border: #2a2f3a;
+    --text: #e6e8ee;
+    --muted: #9aa3b2;
+    --accent: #4f8cff;
+    --accent-hover: #3b76e0;
+    --ok: #22c55e;
+    --bad: #ef4444;
+    --warn: #f59e0b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: radial-gradient(1200px 600px at 20% -10%, #1a2333 0%, var(--bg) 55%);
+    color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+    padding: 32px 16px;
+  }
+  .layout {
+    display: flex;
+    gap: 20px;
+    max-width: 1280px;
+    margin: 0 auto;
+    align-items: flex-start;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.45);
+  }
+  .card.left  { flex: 1 1 58%; min-width: 0; }
+  .card.right { flex: 1 1 42%; min-width: 0; }
+
+  h1 { margin: 0 0 6px; font-size: 20px; letter-spacing: .2px; }
+  .sub { margin: 0 0 18px; color: var(--muted); font-size: 13.5px; line-height: 1.55; }
+
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .field-label { font-size: 12.5px; color: var(--muted); letter-spacing: .2px; }
+
+  /* ---------- 左边：大输入框 ---------- */
+  #question {
+    width: 100%;
+    min-height: 56vh;
+    background: var(--field);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 12px;
+    padding: 14px 16px;
+    font-size: 15px;
+    line-height: 1.7;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    resize: vertical;
+    overflow-y: auto;
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  #question:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,140,255,.18); }
+
+  /* ---------- 左边：输出区（小） ---------- */
+  .output-box {
+    margin-top: 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    background: #12151c;
+  }
+  .output-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px;
+    background: var(--field);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .output-head .meta {
+    margin-left: auto;
+    display: flex; gap: 14px; flex-wrap: wrap;
+    font-size: 12.5px; color: var(--muted);
+  }
+  .meta b { color: var(--text); font-weight: 600; }
+  .badge {
+    font-size: 12px; font-weight: 700; letter-spacing: .4px;
+    padding: 4px 10px; border-radius: 999px; text-transform: uppercase;
+  }
+  .badge.ok     { background: rgba(34,197,94,.15);  color: var(--ok); }
+  .badge.bad    { background: rgba(239,68,68,.15);  color: var(--bad); }
+  .badge.warn   { background: rgba(245,158,11,.15); color: var(--warn); }
+  .badge.neutral{ background: rgba(154,163,178,.15); color: var(--muted); }
+  #outputText {
+    margin: 0;
+    padding: 14px 16px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13.5px;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text);
+    max-height: 240px;
+    overflow-y: auto;
+  }
+  .out-json { border-top: 1px dashed var(--border); }
+  .out-json summary {
+    cursor: pointer; padding: 10px 14px;
+    font-size: 12.5px; color: var(--muted); user-select: none;
+  }
+  #outJson {
+    margin: 0; padding: 12px 14px;
+    font-size: 12px; line-height: 1.55;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: #b7c1d0; white-space: pre-wrap; word-break: break-all;
+    max-height: 300px; overflow-y: auto;
+  }
+
+  /* ---------- 右边：检测表单 ---------- */
+  .field { display: block; margin-bottom: 12px; }
+  .field > span {
+    display: block; font-size: 12.5px; color: var(--muted);
+    margin-bottom: 6px; letter-spacing: .2px;
+  }
+  input, select, textarea {
+    width: 100%;
+    background: var(--field);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 13.5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  select { font-family: inherit; }
+  textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(79,140,255,.18);
+  }
+
+  .parse-result {
+    margin: 4px 0 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #12151c;
+    overflow: hidden;
+  }
+  .parse-result.hidden { display: none; }
+  .parse-head {
+    font-size: 12px; font-weight: 700; letter-spacing: .4px;
+    text-transform: uppercase; color: var(--muted);
+    padding: 8px 12px; background: var(--field); border-bottom: 1px solid var(--border);
+  }
+  .ps-row { display: flex; align-items: center; gap: 10px; font-size: 12.5px; padding: 3px 12px; }
+  .ps-row:first-of-type { margin-top: 8px; }
+  .ps-row:last-of-type { margin-bottom: 8px; }
+  .ps-label { color: var(--muted); min-width: 64px; }
+  .ps-val { font-family: ui-monospace, Menlo, Consolas, monospace; word-break: break-all; }
+  .ps-val.ok { color: var(--ok); }
+  .ps-val.no { color: var(--muted); }
+  .frag-list { padding: 0 12px 10px; border-top: 1px dashed var(--border); }
+  .frag-title { font-size: 11.5px; color: var(--muted); margin: 8px 0 6px; }
+  .frag { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+  .frag-text {
+    flex: 1; min-width: 0;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12.5px; color: var(--text);
+    background: var(--field); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 10px;
+    word-break: break-all; cursor: pointer;
+    transition: border-color .15s;
+  }
+  .frag-text:hover { border-color: var(--accent); }
+  .mini-copy {
+    flex-shrink: 0; background: transparent; color: var(--accent);
+    border: 1px solid var(--accent); border-radius: 8px;
+    padding: 6px 11px; font-size: 12px; font-weight: 600; cursor: pointer;
+    transition: background .15s, color .15s;
+  }
+  .mini-copy:hover { background: var(--accent); color: #fff; }
+
+  .actions { display: flex; gap: 10px; margin-top: 18px; }
+  button {
+    border: 0; border-radius: 10px; padding: 11px 18px;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: background .15s, transform .05s;
+  }
+  button:active { transform: translateY(1px); }
+  #detectBtn { flex: 1; background: var(--accent); color: #fff; }
+  #detectBtn:hover { background: var(--accent-hover); }
+  #detectBtn:disabled { opacity: .55; cursor: not-allowed; }
+  .ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .ghost:hover { color: var(--text); background: var(--field); }
+  .btn.sm { padding: 7px 12px; font-size: 12.5px; border-radius: 8px; }
+  .btn.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .btn.ghost:hover { color: var(--text); background: var(--field); }
+
+  .hint {
+    margin-top: 16px; font-size: 12px; color: var(--muted); line-height: 1.6;
+    border-top: 1px dashed var(--border); padding-top: 12px;
+  }
+  .hint code {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    background: var(--field); padding: 1px 5px; border-radius: 5px;
+  }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 32px;
+    transform: translateX(-50%) translateY(20px);
+    background: #0b0d12; border: 1px solid var(--border); color: var(--text);
+    font-size: 13px; padding: 10px 18px; border-radius: 10px;
+    opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 10;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 920px) {
+    .layout { flex-direction: column; }
+    body { padding: 20px 10px; }
+    #question { min-height: 40vh; }
+  }
+</style>
+</head>
+<body>
+  <div class="layout">
+
+    <!-- ============ 左：大输入 + 小输出 ============ -->
+    <main class="card left">
+      <h1>💬 提问</h1>
+      <p class="sub">在这里输入你的问题，回答会显示在下方；右侧配好 API 后点 Detect。</p>
+
+      <div class="row" style="justify-content:space-between; margin-bottom:8px;">
+        <span class="field-label">你的问题（可直接滚动编辑）</span>
+        <button id="copyQBtn" class="btn ghost sm">复制问题</button>
+      </div>
+      <textarea id="question" spellcheck="false" autocomplete="off"
+        placeholder="在这里输入你的问题…&#10;例如：用一句话介绍你自己 / 写一段 Python 快排"></textarea>
+
+      <div class="output-box">
+        <div class="output-head">
+          <span id="outBadge" class="badge neutral">—</span>
+          <button id="copyOutBtn" class="btn ghost sm">复制回答</button>
+          <span id="outMeta" class="meta"></span>
+        </div>
+        <pre id="outputText">回答将显示在这里。</pre>
+        <details id="outJsonDetails" class="out-json" hidden>
+          <summary>查看完整 JSON</summary>
+          <pre id="outJson"></pre>
+        </details>
+      </div>
+    </main>
+
+    <!-- ============ 右：检测配置 + 批量粘贴 ============ -->
+    <aside class="card right">
+      <h1>LLM API Detector</h1>
+      <p class="sub">把整段信息（API / Key / Model）粘进下方文本框，自动识别填入；识别不了的拆成小片段，点右侧 <b>Copy</b> 复制后手动粘贴。</p>
+
+      <label class="field">
+        <span>批量粘贴 · 自动识别</span>
+        <textarea id="pasteArea" rows="3" spellcheck="false" autocomplete="off"
+          placeholder="例如（空格或换行分隔均可）：&#10;https://api.42x.shop/v1&#10;sk-xxxxxxxxxxxxxxxxxxxxxxxx&#10;deepseek-flash-free"></textarea>
+      </label>
+
+      <div id="parseResult" class="parse-result hidden">
+        <div class="parse-head">解析结果</div>
+        <div id="parseSummary" class="parse-summary"></div>
+        <div id="fragList" class="frag-list"></div>
+      </div>
+
+      <label class="field">
+        <span>API 类型</span>
+        <select id="apiType">
+          <option value="openai">OpenAI 兼容 · POST /chat/completions</option>
+          <option value="anthropic">Anthropic 兼容 · POST /messages</option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span>Base URL</span>
+        <input id="baseUrl" placeholder="https://api.42x.shop/v1" spellcheck="false" autocomplete="off" />
+      </label>
+
+      <label class="field">
+        <span>API Key</span>
+        <input id="apiKey" type="password" placeholder="sk-..." spellcheck="false" autocomplete="off" />
+      </label>
+
+      <label class="field">
+        <span>Model ID</span>
+        <input id="model" placeholder="deepseek-flash-free" spellcheck="false" autocomplete="off" />
+      </label>
+
+      <div class="actions">
+        <button id="detectBtn">Detect</button>
+        <button id="clearBtn" class="ghost">Clear</button>
+      </div>
+
+      <p class="hint">
+        提示：Base URL 可填 <code>https://host/v1</code> 或完整路径 <code>https://host/v1/chat/completions</code>，工具会自动补齐。
+        若浏览器请求失败并提示 CORS，说明该 API 未开放跨域，需服务端允许 <code>Access-Control-Allow-Origin</code> 或用代理转发。
+      </p>
+    </aside>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const pasteAreaEl = $('pasteArea'), parseResultEl = $('parseResult'),
+        parseSummaryEl = $('parseSummary'), fragListEl = $('fragList'),
+        apiTypeEl = $('apiType'), baseUrlEl = $('baseUrl'), apiKeyEl = $('apiKey'),
+        modelEl = $('model'), questionEl = $('question'), detectBtn = $('detectBtn'),
+        clearBtn = $('clearBtn'), toastEl = $('toast'),
+        copyQBtn = $('copyQBtn'), copyOutBtn = $('copyOutBtn'),
+        outBadge = $('outBadge'), outMeta = $('outMeta'),
+        outputText = $('outputText'), outJson = $('outJson'),
+        outJsonDetails = $('outJsonDetails');
+  const LS_KEY = 'llm-api-detector:v2';
+
+  // ---- 记忆上次输入 ----
+  try {
+    const saved = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
+    if (saved) {
+      if (saved.apiType) apiTypeEl.value = saved.apiType;
+      baseUrlEl.value = saved.baseUrl || '';
+      apiKeyEl.value = saved.apiKey || '';
+      modelEl.value = saved.model || '';
+      questionEl.value = saved.question || '';
+      if (saved.paste) pasteAreaEl.value = saved.paste;
+    }
+  } catch (e) {}
+
+  function persist() {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify({
+        apiType: apiTypeEl.value,
+        baseUrl: baseUrlEl.value,
+        apiKey: apiKeyEl.value,
+        model: modelEl.value,
+        question: questionEl.value,
+        paste: pasteAreaEl.value
+      }));
+    } catch (e) {}
+  }
+  [apiTypeEl, baseUrlEl, apiKeyEl, modelEl, questionEl, pasteAreaEl].forEach(el =>
+    el.addEventListener('input', persist));
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+  function trunc(s, n) { s = String(s); return s.length > n ? s.slice(0, n) + '…' : s; }
+  function stripHtml(s) { return String(s || '').replace(/<[^>]*>/g, ''); }
+
+  // ---- 剪贴板 ----
+  async function copyText(t) {
+    const show = (ok) => toast(ok ? ('已复制: ' + trunc(t, 32)) : '复制失败');
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(t);
+        show(true);
+        return;
+      }
+    } catch (e) {}
+    const ta = document.createElement('textarea');
+    ta.value = t;
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); show(true); } catch (e) { show(false); }
+    document.body.removeChild(ta);
+  }
+  let toastTimer;
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2200);
+  }
+
+  copyQBtn.addEventListener('click', () => copyText(questionEl.value));
+  copyOutBtn.addEventListener('click', () => copyText(outputText.textContent));
+
+  // ---- 批量解析 ----
+  function cleanToken(s) {
+    return s.replace(/^["'`]+/, '').replace(/["'`]+$/, '').replace(/[),;.]+$/, '');
+  }
+  function classifyLabel(label) {
+    const L = label.toLowerCase().replace(/[\s_\-]/g, '');
+    if (['api','base','url','endpoint','host','apibase','apiurl','baseurl'].includes(L)) return 'baseUrl';
+    if (['apikey','key','token','auth','authorization','bearer','secret'].includes(L)) return 'apiKey';
+    if (['model','modelid'].includes(L)) return 'model';
+    return null;
+  }
+  function parseAll(raw) {
+    const text = (raw || '').trim();
+    const r = { baseUrl: '', apiKey: '', model: '', apiType: null, unmatched: [] };
+    if (!text) return r;
+
+    const labelRe = /\b(api[_-]?key|apikey|key|token|auth(?:orization)?|bearer|secret|model(?:[_-]?id)?|base[_-]?url|api[_-]?base|api[_-]?url|endpoint|host|api|base|url)\b\s*[:=]\s*([^\s,;]+)/gi;
+    let rest = text;
+    let m;
+    while ((m = labelRe.exec(text)) !== null) {
+      const kind = classifyLabel(m[1]);
+      const val = cleanToken(m[2]);
+      if (kind === 'baseUrl' && val && !r.baseUrl) r.baseUrl = val;
+      else if (kind === 'apiKey' && val && !r.apiKey) r.apiKey = val;
+      else if (kind === 'model' && val && !r.model) r.model = val;
+      rest = rest.replace(m[0], ' ');
+    }
+
+    const urlRe = /https?:\/\/[^\s"'<>]+/gi;
+    const urls = (rest.match(urlRe) || []).map(u => cleanToken(u));
+    if (urls.length && !r.baseUrl) r.baseUrl = urls[0];
+    rest = rest.replace(urlRe, ' ');
+
+    const tokens = rest.split(/[\s,;]+/).map(cleanToken).filter(Boolean);
+    const PURE_LABEL = /^(base[_-]?url|url|endpoint|api[_-]?base|host|base|api[_-]?key|apikey|key|token|auth|authorization|bearer|secret|model|model[_-]?id)$/i;
+    for (const tok of tokens) {
+      if (!tok || PURE_LABEL.test(tok)) continue;
+      if (!r.apiKey && /^sk-[A-Za-z0-9\-_]{16,}$/.test(tok)) { r.apiKey = tok; continue; }
+      if (!r.apiKey && /^[A-Za-z0-9\-_]{24,}$/.test(tok) && /[A-Za-z]/.test(tok) && /\d/.test(tok)) { r.apiKey = tok; continue; }
+      if (!r.model && /^[A-Za-z0-9][A-Za-z0-9._:\-/]{1,63}$/.test(tok)) { r.model = tok; continue; }
+      r.unmatched.push(tok);
+    }
+
+    if (r.baseUrl && !r.apiType) {
+      r.apiType = /anthropic|\/messages/i.test(r.baseUrl) ? 'anthropic' : 'openai';
+    }
+    return r;
+  }
+  function renderParse(r) {
+    if (!pasteAreaEl.value.trim()) { parseResultEl.classList.add('hidden'); return; }
+    parseResultEl.classList.remove('hidden');
+    const row = (label, val) =>
+      '<div class="ps-row"><span class="ps-label">' + label + '</span>' +
+      (val
+        ? '<span class="ps-val ok">✓ ' + esc(trunc(val, 40)) + '</span>'
+        : '<span class="ps-val no">✗ 未识别</span>') + '</div>';
+    parseSummaryEl.innerHTML = row('Base URL', r.baseUrl) + row('API Key', r.apiKey) + row('Model', r.model);
+    if (r.unmatched.length) {
+      fragListEl.innerHTML =
+        '<div class="frag-title">未识别片段（点击片段或 Copy 复制）</div>' +
+        r.unmatched.map(f =>
+          '<div class="frag"><code class="frag-text" title="点击复制">' + esc(f) +
+          '</code><button class="mini-copy" data-frag="' + esc(f) + '">Copy</button></div>'
+        ).join('');
+    } else {
+      fragListEl.innerHTML = '';
+    }
+  }
+  function parseAndFill() {
+    const r = parseAll(pasteAreaEl.value);
+    if (r.baseUrl) { baseUrlEl.value = r.baseUrl; if (r.apiType) apiTypeEl.value = r.apiType; }
+    if (r.apiKey)  apiKeyEl.value = r.apiKey;
+    if (r.model)   modelEl.value = r.model;
+    persist();
+    renderParse(r);
+  }
+  let parseTimer;
+  pasteAreaEl.addEventListener('input', () => {
+    clearTimeout(parseTimer);
+    parseTimer = setTimeout(parseAndFill, 300);
+  });
+  if (pasteAreaEl.value) parseAndFill();
+
+  fragListEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('.mini-copy');
+    if (btn) { copyText(btn.dataset.frag); return; }
+    const code = e.target.closest('.frag-text');
+    if (code) copyText(code.textContent);
+  });
+
+  // ---- 端点拼接与检测 ----
+  function normalizeBaseUrl(raw, apiType) {
+    let url = (raw || '').trim();
+    if (!url) return null;
+    if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+    url = url.replace(/\/+$/, '');
+    if (apiType === 'anthropic') {
+      if (!/\/messages$/.test(url)) url += '/messages';
+    } else {
+      if (!/\/chat\/completions$/.test(url)) url += '/chat/completions';
+    }
+    return url;
+  }
+  function summarize(json, apiType) {
+    if (!json) return { model: null, text: '' };
+    const model = json.model || null;
+    let text = '';
+    if (apiType === 'anthropic') {
+      text = (json.content || []).filter(b => b && b.type === 'text').map(b => b.text || '').join('');
+    } else {
+      const choice = json.choices && json.choices[0];
+      if (choice) {
+        const msg = choice.message || {};
+        text = (msg.content || '') || (msg.reasoning_content || '');
+      }
+    }
+    return { model, text };
+  }
+
+  function setBadge(cls, text) { outBadge.className = 'badge ' + cls; outBadge.textContent = text; }
+  function renderOk(json, apiType, ms, httpStatus) {
+    const { model, text } = summarize(json, apiType);
+    setBadge('ok', 'OK');
+    outMeta.innerHTML =
+      '延迟 <b>' + ms + ' ms</b> · HTTP <b>' + httpStatus + '</b>' +
+      (model ? ' · 模型 <b>' + esc(model) + '</b>' : '');
+    outputText.textContent = text || '（无文本内容）';
+    outJson.textContent = JSON.stringify(json, null, 2);
+    outJsonDetails.hidden = false;
+  }
+  function renderFail(title, ms, detailHtml) {
+    setBadge('bad', 'FAIL');
+    outMeta.innerHTML = '耗时 <b>' + ms + ' ms</b>';
+    outputText.textContent = title + (detailHtml ? '\n\n' + stripHtml(detailHtml) : '');
+    outJson.textContent = title + (detailHtml ? '\n' + stripHtml(detailHtml) : '');
+    outJsonDetails.hidden = false;
+  }
+  function renderWarn(title, ms, detailHtml) {
+    setBadge('warn', 'TIMEOUT');
+    outMeta.innerHTML = '耗时 <b>' + ms + ' ms</b>';
+    outputText.textContent = title + (detailHtml ? '\n\n' + stripHtml(detailHtml) : '');
+    outJsonDetails.hidden = true;
+  }
+
+  clearBtn.addEventListener('click', () => {
+    pasteAreaEl.value = ''; baseUrlEl.value = ''; apiKeyEl.value = ''; modelEl.value = '';
+    persist();
+    parseResultEl.classList.add('hidden');
+    setBadge('neutral', '—');
+    outMeta.innerHTML = '';
+    outputText.textContent = '回答将显示在这里。';
+    outJsonDetails.hidden = true;
+  });
+
+  detectBtn.addEventListener('click', async () => {
+    const apiType = apiTypeEl.value;
+    const baseUrl = baseUrlEl.value.trim();
+    const apiKey = apiKeyEl.value.trim();
+    const model = modelEl.value.trim();
+    const question = questionEl.value.trim() || 'ping';
+
+    if (!baseUrl) { renderFail('请填写 Base URL', 0, null); baseUrlEl.focus(); return; }
+    if (!apiKey)  { renderFail('请填写 API Key', 0, null); apiKeyEl.focus(); return; }
+    if (!model)   { renderFail('请填写 Model ID', 0, null); modelEl.focus(); return; }
+
+    const endpoint = normalizeBaseUrl(baseUrl, apiType);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+    const start = performance.now();
+
+    detectBtn.disabled = true;
+    detectBtn.textContent = 'Detecting…';
+    setBadge('warn', 'PENDING');
+    outMeta.innerHTML = '请求中…';
+    outputText.textContent = '正在请求：' + endpoint + '\n模型：' + model + '\n问题：' + question;
+    outJsonDetails.hidden = true;
+
+    let headers, body;
+    if (apiType === 'anthropic') {
+      headers = { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' };
+      body = JSON.stringify({ model: model, max_tokens: 512, messages: [{ role: 'user', content: question }] });
+    } else {
+      headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey };
+      body = JSON.stringify({ model: model, messages: [{ role: 'user', content: question }], max_tokens: 512, stream: false });
+    }
+
+    try {
+      const res = await fetch(endpoint, { method: 'POST', headers, body, signal: controller.signal });
+      const ms = Math.round(performance.now() - start);
+      clearTimeout(timer);
+      const text = await res.text();
+      let json = null;
+      try { json = JSON.parse(text); } catch (e) {}
+
+      if (res.ok) {
+        renderOk(json || { _raw: text }, apiType, ms, res.status);
+      } else {
+        const errMsg = json && json.error
+          ? (json.error.message || JSON.stringify(json.error))
+          : (text || ('HTTP ' + res.status));
+        renderFail('API 返回错误（HTTP ' + res.status + '）', ms, esc(errMsg) + '\n' + text);
+      }
+    } catch (err) {
+      const ms = Math.round(performance.now() - start);
+      clearTimeout(timer);
+      if (err.name === 'AbortError') {
+        renderWarn('请求超时（30 秒无响应）', ms, '请检查网络或 endpoint 是否正确。');
+      } else if (err instanceof TypeError) {
+        renderFail(
+          '网络错误或 CORS 限制',
+          ms,
+          '浏览器直接请求失败。若控制台报 CORS，说明该 API 未返回 Access-Control-Allow-Origin，需服务端开放跨域或通过代理转发。'
+        );
+      } else {
+        renderFail('未知错误', ms, err.message || String(err));
+      }
+    } finally {
+      detectBtn.disabled = false;
+      detectBtn.textContent = 'Detect';
+    }
+  });
+})();
+</script>
+</body>
+</html>

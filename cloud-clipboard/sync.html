@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>云剪贴板</title>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script>
+// 二维码库 CDN 备用（jsdelivr 不可用时切 unpkg）
+if (typeof QRCode === 'undefined') {
+  document.write('<script src="https://unpkg.com/qrcodejs@1.0.0/qrcode.min.js"><\/script>');
+}
+</script>
+<style>
+:root {
+  --bg: #0b0e14;
+  --card: #151a24;
+  --card2: #1b2230;
+  --border: #273042;
+  --text: #e8ecf4;
+  --muted: #8b96a9;
+  --accent: #5b8cff;
+  --accent2: #7c5bff;
+  --ok: #34d399;
+  --bad: #f87171;
+  --warn: #fbbf24;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(900px 500px at 85% -10%, rgba(124,91,255,.18) 0%, transparent 55%),
+    radial-gradient(900px 500px at -10% 10%, rgba(91,140,255,.16) 0%, transparent 55%),
+    var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  line-height: 1.5;
+  padding: 20px 14px 40px;
+}
+.container { max-width: 760px; margin: 0 auto; }
+.panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px;
+  margin-bottom: 16px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+}
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.panel-head h2 { margin: 0; font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.panel-head h1 { margin: 0; font-size: 19px; font-weight: 700; }
+.muted { color: var(--muted); font-size: 12.5px; margin: 4px 0 0; line-height: 1.6; }
+.badge {
+  font-size: 11px; padding: 2px 9px; border-radius: 999px; font-weight: 500;
+  background: rgba(91,140,255,.15); color: #a9c2ff;
+}
+.badge.mobile { background: rgba(124,91,255,.18); color: #c5b3ff; }
+.badge.pc { background: rgba(52,211,153,.15); color: #7deec2; }
+.status {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 500; padding: 4px 11px; border-radius: 999px;
+}
+.status .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.status.ok { background: rgba(52,211,153,.14); color: var(--ok); }
+.status.err { background: rgba(248,113,113,.14); color: var(--bad); }
+
+textarea, input[type="text"] {
+  width: 100%; padding: 12px 14px; border: 1px solid var(--border);
+  border-radius: 12px; background: var(--card2); color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px; resize: vertical; outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+textarea:focus, input[type="text"]:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(91,140,255,.18);
+}
+textarea { min-height: 120px; line-height: 1.6; }
+textarea[readonly] { background: #10151f; }
+
+.clip-box {
+  position: relative;
+  border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+  transition: border-color .3s, box-shadow .3s;
+}
+.clip-box textarea { border: 0; border-radius: 0; min-height: 160px; }
+.clip-box.flash { border-color: var(--accent2); box-shadow: 0 0 0 3px rgba(124,91,255,.22); }
+.clip-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 40px 10px; }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--accent); color: #fff; border: 0; border-radius: 10px;
+  padding: 10px 16px; font-size: 13.5px; font-weight: 600; cursor: pointer;
+  font-family: inherit; transition: background .15s, transform .05s;
+}
+.btn:hover { background: #4a7bf0; }
+.btn:active { transform: translateY(1px); }
+.btn.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+.btn.ghost:hover { color: var(--text); background: var(--card2); }
+.btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); }
+.btn.primary:hover { filter: brightness(1.08); background: linear-gradient(135deg, var(--accent), var(--accent2)); }
+.btn.sm { padding: 7px 12px; font-size: 12.5px; border-radius: 8px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+.qr-wrap { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+#qrcode {
+  background: #fff; border-radius: 12px; padding: 10px; display: inline-block;
+  min-width: 200px; min-height: 200px; line-height: 180px; text-align: center;
+  color: #64748b; font-size: 12px;
+}
+#qrcode img, #qrcode canvas { display: block; margin: 0 auto; }
+.link-box {
+  flex: 1; min-width: 220px;
+}
+.link-url {
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px;
+  word-break: break-all; background: var(--card2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 12px; color: #a9c2ff; margin: 8px 0;
+}
+.check {
+  display: inline-flex; align-items: center; gap: 7px; font-size: 13px;
+  color: var(--muted); cursor: pointer; user-select: none;
+}
+.check input { width: auto; }
+
+.file-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+  margin-bottom: 8px; flex-wrap: wrap; background: var(--card2);
+}
+.file-name { font-size: 13.5px; font-weight: 500; word-break: break-all; flex: 1; min-width: 0; }
+.file-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.file-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+.toast {
+  position: fixed; top: 16px; left: 50%; transform: translateX(-50%) translateY(-20px);
+  background: #0d111a; border: 1px solid var(--border); color: var(--text);
+  font-size: 13px; padding: 10px 18px; border-radius: 12px; opacity: 0;
+  pointer-events: none; transition: opacity .25s, transform .25s; z-index: 99;
+  box-shadow: 0 10px 30px rgba(0,0,0,.5);
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+.mobile-only, .desktop-only { display: none; }
+body.mobile .mobile-only { display: block; }
+body.desktop .desktop-only { display: block; }
+
+@media (max-width: 600px) {
+  body { padding: 12px 10px 30px; }
+  .panel { padding: 15px; border-radius: 14px; }
+  #qrcode { min-width: 170px; min-height: 170px; line-height: 150px; }
+}
+</style>
+</head>
+<body class="desktop">
+<div class="container">
+
+  <!-- ===================== 电脑端 ===================== -->
+  <div class="desktop-only">
+
+    <div class="panel">
+      <div class="panel-head">
+        <h1>💻 电脑端 · 云剪贴板</h1>
+        <span id="status-d" class="status err"><span class="dot"></span>连接中…</span>
+      </div>
+      <p class="muted">手机扫码或打开下方链接 → 手机上粘贴内容 → 本页自动显示。</p>
+
+      <div class="qr-wrap" style="margin-top:12px;">
+        <div id="qrcode">加载中…</div>
+        <div class="link-box">
+          <label style="font-size:12.5px; color:var(--muted);">本机 IP（可手动覆盖）</label>
+          <input id="ip-input" type="text" placeholder="自动检测中…（可填 192.168.x.x 或域名:端口）">
+          <div class="link-url" id="mobile-url">检测中…</div>
+          <div class="row">
+            <button class="btn sm ghost" onclick="copyTextOf('mobile-url', this)">复制手机链接</button>
+            <button class="btn sm ghost" onclick="refreshIp()">🔄 重新检测</button>
+          </div>
+        </div>
+      </div>
+      <p class="muted" id="ip-note" style="margin-top:10px;"></p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>📲 手机 → 电脑 <span class="badge mobile">来自手机</span></h2>
+        <div class="row">
+          <label class="check"><input type="checkbox" id="auto-copy"> 收到自动复制</label>
+          <button class="btn ghost sm" onclick="copyClip()">复制</button>
+          <button class="btn ghost sm" onclick="clearLocal()">清空显示</button>
+        </div>
+      </div>
+      <div class="clip-box" id="clip-box">
+        <textarea id="clip-display" readonly placeholder="等待手机端粘贴内容…"></textarea>
+      </div>
+      <p class="muted" id="clip-meta">尚未收到内容 · 每 1.5 秒自动刷新</p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>🖥️ 电脑 → 手机 <span class="badge pc">发送</span></h2>
+        <div class="row">
+          <button class="btn primary sm" id="send-btn" onclick="sendToPhone()">发送到手机</button>
+          <button class="btn ghost sm" onclick="clearPcInput()">清空</button>
+        </div>
+      </div>
+      <textarea id="pc-input" placeholder="输入内容，点击「发送到手机」，手机端会自动显示…"></textarea>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>📁 文件</h2>
+        <div class="row">
+          <label class="btn sm" style="cursor:pointer;">
+            📤 上传
+            <input id="pc-upload" type="file" multiple style="display:none;">
+          </label>
+          <button class="btn ghost sm" onclick="refreshFiles()">🔄 刷新</button>
+        </div>
+      </div>
+      <p class="muted">上传后手机端可下载；也可直接下载目录里的文件。</p>
+      <div id="file-list" style="margin-top:10px;"></div>
+    </div>
+  </div>
+
+  <!-- ===================== 手机端 ===================== -->
+  <div class="mobile-only">
+
+    <div class="panel">
+      <div class="panel-head">
+        <h1>📱 手机端 · 云剪贴板</h1>
+        <span id="status-m" class="status err"><span class="dot"></span>连接中…</span>
+      </div>
+      <p class="muted">下方粘贴内容会实时发送到电脑。</p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>📋 粘贴到电脑 <span class="badge mobile">自动发送</span></h2>
+        <button class="btn ghost sm" onclick="clearMobileInput()">清空</button>
+      </div>
+      <textarea id="mobile-input" placeholder="在此粘贴或输入内容，会自动发送到电脑…"></textarea>
+      <p class="muted" id="mobile-count">0 字符 · 已发送</p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>🖥️ 来自电脑 <span class="badge pc">显示</span></h2>
+        <button class="btn ghost sm" onclick="copyMobileClip()">复制</button>
+      </div>
+      <div class="clip-box" id="clip-box-m">
+        <textarea id="clip-display-m" readonly placeholder="等待电脑端发送内容…"></textarea>
+      </div>
+      <p class="muted" id="clip-meta-m">尚未收到内容</p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>📁 文件</h2>
+        <div class="row">
+          <label class="btn sm" style="cursor:pointer;">
+            📤 上传
+            <input id="mobile-upload" type="file" multiple style="display:none;">
+          </label>
+          <button class="btn ghost sm" onclick="refreshFiles()">🔄 刷新</button>
+        </div>
+      </div>
+      <div id="file-list-m" style="margin-top:10px;"></div>
+    </div>
+  </div>
+
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+(function(){
+  const $ = (id) => document.getElementById(id);
+  const params = new URLSearchParams(window.location.search);
+  const isMobile = params.get('mode') === 'mobile';
+  document.body.classList.toggle('mobile', isMobile);
+  document.body.classList.toggle('desktop', !isMobile);
+  document.title = isMobile ? '📱 云剪贴板' : '💻 云剪贴板';
+
+  // ---------- 工具 ----------
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+  function fmtTime(){ return new Date().toLocaleTimeString(); }
+  function fmtSize(b){ b=+b||0; if(b<1024)return b+' B'; if(b<1048576)return (b/1024).toFixed(1)+' KB'; if(b<1073741824)return (b/1048576).toFixed(2)+' MB'; return (b/1073741824).toFixed(2)+' GB'; }
+
+  let toastTimer;
+  function toast(msg){
+    const el = $('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=>el.classList.remove('show'), 2600);
+  }
+
+  function copyText(t, btn){
+    const done = () => { if(btn){ const old=btn.textContent; btn.textContent='✓ 已复制'; setTimeout(()=>btn.textContent=old,1200); } };
+    const fallback = () => {
+      const ta=document.createElement('textarea'); ta.value=t; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select();
+      try{ document.execCommand('copy'); }catch(e){}
+      document.body.removeChild(ta);
+    };
+    if (navigator.clipboard && (window.isSecureContext || location.hostname==='localhost' || location.protocol==='file:')) {
+      navigator.clipboard.writeText(t).then(done).catch(()=>{ fallback(); done(); });
+    } else { fallback(); done(); }
+  }
+  window.copyTextOf = function(id, btn){ const el=$(id); if(el) copyText(el.textContent.trim(), btn); };
+
+  function setStatus(el, ok, label){
+    if(!el) return;
+    el.className = 'status ' + (ok?'ok':'err');
+    el.innerHTML = '<span class="dot"></span>' + label;
+  }
+
+  // ---------- 剪贴板核心 ----------
+  let lastVersion = -1;
+
+  async function pushClipboard(text, source){
+    try {
+      await fetch('/api/clipboard', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({text:text, source:source})
+      });
+    } catch(e){}
+  }
+
+  function showClip(text, srcLabel, when){
+    if (isMobile) {
+      const box = $('clip-display-m');
+      box.value = text;
+      $('clip-meta-m').textContent = (text?text.length+' 字符':'空') + ' · ' + srcLabel + ' · ' + when;
+      const c = $('clip-box-m'); if(c){ c.classList.add('flash'); setTimeout(()=>c.classList.remove('flash'), 800); }
+    } else {
+      const box = $('clip-display');
+      box.value = text;
+      $('clip-meta').textContent = (text?text.length+' 字符':'空') + ' · ' + srcLabel + ' · ' + when;
+      const c = $('clip-box'); if(c){ c.classList.add('flash'); setTimeout(()=>c.classList.remove('flash'), 800); }
+      if (text && $('auto-copy') && $('auto-copy').checked) {
+        copyText(text, null);
+        toast('已自动复制到剪贴板');
+      } else if (text) {
+        toast('收到新内容（' + text.length + ' 字符）');
+      }
+    }
+  }
+
+  async function poll(){
+    try {
+      const res = await fetch('/api/clipboard?since=' + lastVersion, {cache:'no-store'});
+      if (!res.ok) { throw new Error('HTTP '+res.status); }
+      const d = await res.json();
+      if (d.unchanged) {
+        // 服务器在线
+        setStatus(isMobile?$('status-m'):$('status-d'), true, '已连接');
+        return;
+      }
+      lastVersion = d.version;
+      setStatus(isMobile?$('status-m'):$('status-d'), true, '已连接');
+      const srcLabel = d.source === 'pc' ? '电脑' : (d.source === 'mobile' ? '手机' : d.source);
+      // PC 只显示来自手机的；手机只显示来自电脑的
+      if (isMobile) {
+        if (d.source === 'pc') showClip(d.text, srcLabel, new Date(d.updated_at).toLocaleTimeString());
+      } else {
+        if (d.source === 'mobile') showClip(d.text, srcLabel, new Date(d.updated_at).toLocaleTimeString());
+      }
+    } catch(e){
+      setStatus(isMobile?$('status-m'):$('status-d'), false, '未连接');
+    }
+  }
+
+  setInterval(poll, 1500);
+  poll();
+
+  // ---------- 电脑端发送 ----------
+  window.sendToPhone = async function(){
+    const v = $('pc-input').value;
+    await pushClipboard(v, 'pc');
+    toast('已发送到手机');
+  };
+  window.clearPcInput = function(){
+    $('pc-input').value = '';
+    $('pc-input').focus();
+  };
+  window.copyClip = function(){ copyText($('clip-display').value, event && event.target); };
+  window.clearLocal = function(){ $('clip-display').value=''; $('clip-meta').textContent='尚未收到内容'; };
+  window.copyMobileClip = function(){ copyText($('clip-display-m').value, event && event.target); };
+
+  // ---------- 手机端输入自动发送 ----------
+  window.clearMobileInput = function(){
+    $('mobile-input').value='';
+    $('mobile-count').textContent='0 字符';
+    pushClipboard('', 'mobile');
+  };
+  if (isMobile) {
+    let t;
+    $('mobile-input').addEventListener('input', () => {
+      const v = $('mobile-input').value;
+      $('mobile-count').textContent = v.length + ' 字符 · 发送中…';
+      clearTimeout(t);
+      t = setTimeout(async () => {
+        await pushClipboard(v, 'mobile');
+        $('mobile-count').textContent = v.length + ' 字符 · 已发送 ' + fmtTime();
+      }, 400);
+    });
+  }
+
+  // ---------- IP / 二维码 ----------
+  let lanIP = null;
+  async function detectInfo(){
+    try {
+      const res = await fetch('/api/info', {cache:'no-store'});
+      if (!res.ok) return null;
+      const d = await res.json();
+      if (d && d.lan_ip && d.lan_ip !== '127.0.0.1') return d;
+    } catch(e){}
+    return null;
+  }
+
+  function effectiveIP(){
+    if (isMobile) return window.location.host;
+    const manual = $('ip-input').value.trim();
+    if (manual) return manual;
+    return lanIP || window.location.host;
+  }
+
+  function buildMobileUrl(){
+    const base = effectiveIP();
+    return 'http://' + base + window.location.pathname + '?mode=mobile';
+  }
+
+  function renderQR(text){
+    const box = $('qrcode');
+    if (!box) return;
+    box.innerHTML = '';
+    if (typeof QRCode === 'undefined') {
+      box.textContent = '二维码库加载失败\n请手动输入下方链接';
+      box.style.cssText = 'white-space:pre-line; line-height:1.6;';
+      return;
+    }
+    try {
+      new QRCode(box, { text, width:200, height:200, colorDark:'#000', colorLight:'#fff', correctLevel: QRCode.CorrectLevel.H });
+    } catch(e) {
+      box.textContent = '二维码生成失败';
+    }
+  }
+
+  window.refreshIp = async function(){
+    const info = await detectInfo();
+    if (info && info.lan_ip) {
+      lanIP = info.lan_ip;
+      if (!$('ip-input').value.trim()) $('ip-input').value = info.lan_ip;
+    }
+    updateLink();
+  };
+  function updateLink(){
+    if (isMobile) return;
+    const url = buildMobileUrl();
+    $('mobile-url').textContent = url;
+    renderQR(url);
+    $('ip-note').textContent = '当前 IP：' + effectiveIP();
+  }
+  if (!isMobile) {
+    $('ip-input').addEventListener('input', updateLink);
+    detectInfo().then(info => {
+      if (info && info.lan_ip) {
+        lanIP = info.lan_ip;
+        if (!$('ip-input').value.trim()) $('ip-input').value = info.lan_ip;
+      }
+      updateLink();
+    });
+    updateLink();
+  }
+
+  // ---------- 文件 ----------
+  function fileListBox(){ return isMobile ? $('file-list-m') : $('file-list'); }
+
+  async function refreshFiles(){
+    const box = fileListBox();
+    box.innerHTML = '<p class="muted">读取中…</p>';
+    try {
+      const res = await fetch('/', {cache:'no-store'});
+      if (!res.ok) throw new Error('HTTP '+res.status);
+      let html = await res.text();
+      html = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,'')
+                 .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi,'');
+      const links = [...html.matchAll(/<a\s+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)];
+      const files = links.map(m => ({href:m[1], name:(m[2]||'').replace(/<[^>]+>/g,'').trim()}))
+        .filter(l => l.href && !l.href.startsWith('#') && !l.href.startsWith('?') && l.href !== '/' && !l.href.endsWith('/'))
+        .map(l => { const p = decodeURIComponent(l.href); return {name: p.split('/').pop(), path: p}; });
+      if (files.length === 0) {
+        box.innerHTML = '<p class="muted">目录为空</p>';
+      } else {
+        box.innerHTML = files.map(f => `
+          <div class="file-row">
+            <div style="flex:1;min-width:0;">
+              <div class="file-name">📄 ${esc(f.name)}</div>
+              <div class="file-meta">${esc(f.path)}</div>
+            </div>
+            <div class="file-actions">
+              <a class="btn sm ghost" style="text-decoration:none;" href="${esc(f.path)}" download="${esc(f.name)}">下载</a>
+            </div>
+          </div>`).join('');
+      }
+    } catch(e) {
+      box.innerHTML = '<p class="muted">读取失败：' + esc(e.message) + '</p>';
+    }
+  }
+  window.refreshFiles = refreshFiles;
+
+  function uploadFile(file){
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/upload', true);
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) { try{ resolve(JSON.parse(xhr.responseText)); }catch(e){ resolve({ok:true,name:file.name,size:file.size}); } }
+        else reject(new Error('HTTP '+xhr.status));
+      };
+      xhr.onerror = () => reject(new Error('网络错误'));
+      const fd = new FormData();
+      fd.append('file', file, file.name);
+      xhr.send(fd);
+    });
+  }
+
+  const uploadInput = isMobile ? $('mobile-upload') : $('pc-upload');
+  uploadInput.addEventListener('change', async (e) => {
+    const files = Array.from(e.target.files || []);
+    for (const f of files) {
+      try {
+        await uploadFile(f);
+        toast('已上传：' + f.name);
+      } catch(err) {
+        toast('上传失败：' + err.message);
+      }
+    }
+    e.target.value = '';
+    setTimeout(refreshFiles, 300);
+  });
+
+  refreshFiles();
+})();
+</script>
+</body>
+</html>
